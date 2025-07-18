@@ -5,15 +5,15 @@ import numpy as np
 import traceback
 import logging
 from datetime import datetime
+import pandas as pd
 
-# Initialize Flask app
 app = Flask(__name__)
 
 # Configure CORS
 CORS(app, resources={
-    r"/predict": {
-        "origins": ["*"],  # Allow all origins for development
-        "methods": ["POST"],
+    r"/*": {
+        "origins": ["*"],
+        "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type"]
     }
 })
@@ -22,51 +22,26 @@ CORS(app, resources={
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load model
+# Load model and feature names
 try:
-    model = joblib.load('wallet_trust_model.pkl')
-    logger.info("Model loaded successfully")
+    pipeline = joblib.load('wallet_trust_model.pkl')
+    FEATURE_NAMES = joblib.load('feature_names.pkl')
+    logger.info("Model and features loaded successfully")
 except Exception as e:
     logger.error(f"Failed to load model: {str(e)}")
     raise
 
-# Expected features
-FEATURE_NAMES = [
-    'wallet_age_days',
-    'tx_count',
-    'unique_token_count',
-    'total_token_balance',
-    'nfts_owned',
-    'last_tx_days_ago',
-    'smart_contracts_used',
-    'suspicious_activity_flag',
-    'peer_score'
-]
-
-
-def validate_features(features):
-    """Validate feature types and ranges"""
-    checks = {
-        'wallet_age_days': (1, 3650),  # 1 day to 10 years
-        'tx_count': (0, 10000),
-        'unique_token_count': (0, 100),
-        'total_token_balance': (0, 1e8),  # Up to 100 million
-        'nfts_owned': (0, 1000),
-        'last_tx_days_ago': (0, 365),
-        'smart_contracts_used': (0, 50),
-        'suspicious_activity_flag': (0, 1),
-        'peer_score': (0.0, 1.0)
-    }
-
-    errors = []
-    for feature, (min_val, max_val) in checks.items():
-        value = features.get(feature)
-        if not isinstance(value, (int, float)):
-            errors.append(f"{feature} must be a number")
-        elif value < min_val or value > max_val:
-            errors.append(f"{feature} must be between {min_val} and {max_val}")
-
-    return errors
+FEATURE_RANGES = {
+    'wallet_age_days': (1, 3650),
+    'tx_count': (0, 5000),
+    'unique_token_count': (0, 50),
+    'total_token_balance': (0, 1e8),
+    'nfts_owned': (0, 100),
+    'last_tx_days_ago': (0, 365),
+    'smart_contracts_used': (0, 20),
+    'suspicious_activity_flag': (0, 1),
+    'peer_score': (0.0, 1.0)
+}
 
 
 @app.route('/predict', methods=['POST'])
@@ -75,12 +50,11 @@ def predict():
     request_id = start_time.strftime("%Y%m%d%H%M%S")
 
     try:
-        logger.info(f"[{request_id}] Received prediction request")
-
-        # Get and validate input
+        logger.info(f"[{request_id}] Prediction request received")
         data = request.get_json()
+
+        # Validate input
         if not data or 'features' not in data:
-            logger.error(f"[{request_id}] Missing features in request")
             return jsonify({
                 'error': 'Missing features in request',
                 'status': 'error',
@@ -90,89 +64,133 @@ def predict():
         features = data['features']
 
         # Check for missing features
-        missing_features = [f for f in FEATURE_NAMES if f not in features]
-        if missing_features:
-            logger.error(f"[{request_id}] Missing features: {missing_features}")
+        missing = [f for f in FEATURE_NAMES if f not in features]
+        if missing:
             return jsonify({
-                'error': f'Missing features: {missing_features}',
+                'error': f'Missing features: {missing}',
                 'required_features': FEATURE_NAMES,
                 'status': 'error',
                 'request_id': request_id
             }), 400
 
-        # Validate feature values
-        validation_errors = validate_features(features)
-        if validation_errors:
-            logger.error(f"[{request_id}] Validation errors: {validation_errors}")
+        # Prepare input DataFrame
+        try:
+            input_df = pd.DataFrame([features], columns=FEATURE_NAMES)
+        except Exception as e:
             return jsonify({
-                'error': 'Invalid feature values',
-                'details': validation_errors,
+                'error': f'Feature formatting error: {str(e)}',
                 'status': 'error',
                 'request_id': request_id
             }), 400
 
-        # Prepare feature array
-        feature_array = [features[f] for f in FEATURE_NAMES]
-        logger.info(f"[{request_id}] Features: {features}")
-
         # Make prediction
-        trust_score = model.predict([feature_array])[0]
-        trust_score = float(np.clip(trust_score, 0, 1))
+        trust_score = float(np.clip(pipeline.predict(input_df)[0], 0, 1))
 
-        processing_time = (datetime.now() - start_time).total_seconds()
-
-        logger.info(f"[{request_id}] Prediction successful - score: {trust_score:.4f}, time: {processing_time:.2f}s")
+        # Generate explanation
+        explanation = generate_explanation(features, trust_score)
 
         return jsonify({
             'trust_score': trust_score,
+            'score_breakdown': explanation,
             'status': 'success',
             'request_id': request_id,
-            'processing_time': processing_time
+            'processing_time': (datetime.now() - start_time).total_seconds()
         })
 
     except Exception as e:
-        processing_time = (datetime.now() - start_time).total_seconds()
         logger.error(f"[{request_id}] Error: {str(e)}\n{traceback.format_exc()}")
-
         return jsonify({
             'error': 'Prediction failed',
             'message': str(e),
             'status': 'error',
-            'request_id': request_id,
-            'processing_time': processing_time
+            'request_id': request_id
         }), 500
 
 
-@app.route('/')
-def home():
-    return """
-    <h1>Wallet Trust Score API</h1>
-    <p>Send POST requests to /predict with wallet features:</p>
-    <pre>
-    {
-        "features": {
-            "wallet_age_days": 365,
-            "tx_count": 150,
-            "unique_token_count": 5,
-            "total_token_balance": 2500,
-            "nfts_owned": 3,
-            "last_tx_days_ago": 7,
-            "smart_contracts_used": 4,
-            "suspicious_activity_flag": 0,
-            "peer_score": 0.75
-        }
+def generate_explanation(features, score):
+    """Generate human-readable score explanation"""
+    factors = []
+
+    # Wallet age impact
+    age_days = features['wallet_age_days']
+    age_impact = min(age_days / 1000, 0.3)
+    factors.append({
+        'factor': 'Wallet Age',
+        'value': f"{age_days} days",
+        'impact': f"+{age_impact * 100:.1f}%",
+        'tip': 'Older wallets get higher scores'
+    })
+
+    # Transaction count impact
+    tx_count = features['tx_count']
+    tx_impact = min(tx_count / 500, 0.25)
+    factors.append({
+        'factor': 'Transaction Count',
+        'value': tx_count,
+        'impact': f"+{tx_impact * 100:.1f}%",
+        'tip': 'More transactions increase trust'
+    })
+
+    # Peer score impact
+    peer_score = features['peer_score']
+    peer_impact = (peer_score - 0.5) * 0.3
+    factors.append({
+        'factor': 'Peer Reputation',
+        'value': f"{peer_score:.2f}",
+        'impact': f"{peer_impact * 100:+.1f}%",
+        'tip': 'Higher peer scores boost your rating'
+    })
+
+    # Risk factors
+    if features['suspicious_activity_flag']:
+        factors.append({
+            'factor': 'Suspicious Activity',
+            'value': 'Detected',
+            'impact': "-40.0%",
+            'tip': 'Avoid suspicious transactions'
+        })
+
+    # Activity recency
+    last_tx = features['last_tx_days_ago']
+    inactivity_penalty = min(last_tx / 150, 0.2)
+    factors.append({
+        'factor': 'Recent Activity',
+        'value': f"{last_tx} days ago",
+        'impact': f"-{inactivity_penalty * 100:.1f}%",
+        'tip': 'Regular activity improves scores'
+    })
+
+    return {
+        'factors': factors,
+        'score_category': get_score_category(score),
+        'recommendations': generate_recommendations(features)
     }
-    </pre>
-    <p>Response format:</p>
-    <pre>
-    {
-        "trust_score": 0.815,
-        "status": "success",
-        "request_id": "20230601123456",
-        "processing_time": 0.12
-    }
-    </pre>
-    """
+
+
+def get_score_category(score):
+    if score >= 0.8: return 'Excellent'
+    if score >= 0.7: return 'Good'
+    if score >= 0.5: return 'Fair'
+    if score >= 0.3: return 'Limited'
+    return 'Restricted'
+
+
+def generate_recommendations(features):
+    recs = []
+
+    if features['last_tx_days_ago'] > 14:
+        recs.append("Make regular transactions to improve your score")
+
+    if features['tx_count'] < 50:
+        recs.append("Increase your transaction count to build trust")
+
+    if features['peer_score'] < 0.5:
+        recs.append("Interact with reputable wallets to improve peer score")
+
+    if features['suspicious_activity_flag']:
+        recs.append("Review recent activity to remove suspicious flags")
+
+    return recs if recs else ["Your wallet activity looks good. Keep it up!"]
 
 
 if __name__ == '__main__':
