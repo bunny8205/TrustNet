@@ -2,12 +2,68 @@ import React, { useState } from 'react';
 import ConnectWalletButton from '../components/ConnectWalletButton';
 import { useWallet } from '../contexts/WalletContext';
 import hathorLogo from '../assets/hathor-logo.png';
+import {
+  TransactionLimitsFeature,
+  EscrowProtectionFeature,
+  ReducedFeesFeature,
+  KYCStatusFeature,
+  TransactionInsuranceFeature,
+  JobBoardAccessFeature,
+  CommunityAccessFeature,
+  NFTReputationFeature,
+  SecurityFeaturesFeature
+} from './FeatureComponents';
 
 interface Feature {
   title: string;
   description: string;
   unlocked: boolean;
   currentLevel: string;
+}
+
+// Add MetricItem interface and component at the top
+interface MetricItemProps {
+  label: string;
+  value: string | number;
+  onClick?: () => void;
+}
+
+const MetricItem: React.FC<MetricItemProps> = ({ label, value, onClick }) => (
+  <div
+    style={{
+      lineHeight: '1.5',
+      cursor: onClick ? 'pointer' : 'default',
+      padding: onClick ? '8px' : '0',
+      borderRadius: onClick ? '8px' : '0',
+      transition: onClick ? 'background-color 0.2s' : 'none'
+    }}
+    className={onClick ? "hover:bg-gray-100" : ""}
+    onClick={onClick}
+  >
+    <div style={{
+      fontSize: '0.75rem',
+      color: '#6b7280',
+      marginBottom: '0.25rem',
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+      fontWeight: 500
+    }}>
+      {label}
+    </div>
+    <div style={{
+      fontWeight: '600',
+      fontSize: '1rem',
+      color: '#1f2937'
+    }}>
+      {value}
+    </div>
+  </div>
+);
+
+// Add RiskData interface
+interface RiskData {
+  riskScore: number;
+  recommendation: string;
 }
 
 const HomePage: React.FC = () => {
@@ -345,8 +401,10 @@ const HomePage: React.FC = () => {
               backgroundColor: '#ffffff',
               padding: '2rem',
               borderRadius: '1rem',
-              maxWidth: '600px',
+              maxWidth: '800px',
               width: '90%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
               boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)',
               position: 'relative'
             }}>
@@ -367,44 +425,41 @@ const HomePage: React.FC = () => {
                 ×
               </button>
 
-              <h3 style={{
-                marginTop: 0,
-                color: '#111827',
-                fontSize: '1.5rem',
-                fontWeight: 700
-              }}>
-                {selectedFeature.title}
-              </h3>
+              {selectedFeature.title === "Transaction Limits" && (
+                <TransactionLimitsFeature trustScore={trustScore ?? 0} walletData={walletData} />
+              )}
 
-              <p style={{
-                whiteSpace: 'pre-line',
-                color: '#4b5563',
-                lineHeight: '1.75',
-                marginTop: '1rem',
-                fontSize: '1rem'
-              }}>
-                {getFeatureDescription(selectedFeature)}
-              </p>
+              {selectedFeature.title === "Escrow Protection" && (
+                <EscrowProtectionFeature trustScore={trustScore ?? 0} />
+              )}
 
-              <button
-                style={{
-                  marginTop: '2rem',
-                  backgroundColor: '#3b82f6',
-                  color: '#ffffff',
-                  border: 'none',
-                  padding: '0.75rem 1.5rem',
-                  borderRadius: '0.5rem',
-                  fontWeight: 600,
-                  fontSize: '1rem',
-                  cursor: 'pointer'
-                }}
-                onClick={() => {
-                  // Add your feature logic here
-                  setSelectedFeature(null); // Close after apply
-                }}
-              >
-                Apply
-              </button>
+              {selectedFeature.title === "Reduced Fees" && (
+                <ReducedFeesFeature trustScore={trustScore ?? 0} />
+              )}
+
+              {selectedFeature.title === "KYC Status" && (
+                <KYCStatusFeature trustScore={trustScore ?? 0} />
+              )}
+
+              {selectedFeature.title === "Transaction Insurance" && (
+                <TransactionInsuranceFeature trustScore={trustScore ?? 0} />
+              )}
+
+              {selectedFeature.title === "Job Board Access" && (
+                <JobBoardAccessFeature trustScore={trustScore ?? 0} />
+              )}
+
+              {selectedFeature.title === "Community Access" && (
+                <CommunityAccessFeature trustScore={trustScore ?? 0} />
+              )}
+
+              {selectedFeature.title === "NFT Reputation" && (
+                <NFTReputationFeature trustScore={trustScore ?? 0} />
+              )}
+
+              {selectedFeature.title === "Security Features" && (
+                <SecurityFeaturesFeature trustScore={trustScore ?? 0} riskData={riskData} />
+              )}
             </div>
           </div>
         )}
@@ -961,41 +1016,5 @@ const HomePage: React.FC = () => {
     </div>
   );
 };
-
-const MetricItem: React.FC<{
-    label: string;
-    value: string | number;
-    onClick?: () => void;
-  }> = ({ label, value, onClick }) => (
-    <div
-      style={{
-        lineHeight: '1.5',
-        cursor: onClick ? 'pointer' : 'default',
-        padding: onClick ? '8px' : '0',
-        borderRadius: onClick ? '8px' : '0',
-        transition: onClick ? 'background-color 0.2s' : 'none'
-      }}
-      className={onClick ? "hover:bg-gray-100" : ""}
-      onClick={onClick}
-    >
-      <div style={{
-        fontSize: '0.75rem',
-        color: '#6b7280',
-        marginBottom: '0.25rem',
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-        fontWeight: 500
-      }}>
-        {label}
-      </div>
-      <div style={{
-        fontWeight: '600',
-        fontSize: '1rem',
-        color: '#1f2937'
-      }}>
-        {value}
-      </div>
-    </div>
-  );
 
 export default HomePage;
